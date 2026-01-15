@@ -2,6 +2,8 @@
 
 This project will contain the solutions for "Ten beginner project ideas after you learn Solidity" blog by [`rareskills`](https://rareskills.io/).
 
+Link of the Blog: https://rareskills.io/post/beginner-solidity-projects
+
 At the moment the repository has the following projects solved:
 - Purchase NFT with ERC20 tokens
 - Time unlocked ERC20 / vesting contract
