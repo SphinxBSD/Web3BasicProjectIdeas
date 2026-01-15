@@ -1,17 +1,28 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# WEB3 BASIC PROJECT IDEAS
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+This project will contain the solutions for "Ten beginner project ideas after you learn Solidity" blog by [`rareskills`](https://rareskills.io/).
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+At the moment the repository has the following projects solved:
+- Purchase NFT with ERC20 tokens
+- Time unlocked ERC20 / vesting contract
 
-## Project Overview
+## Installation
 
-This example project includes:
+First clone the repository
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+```shell
+git clone https://github.com/SphinxBSD/Web3BasicProjectIdeas.git
+```
+
+Install node dependencies
+```shell
+npm install
+```
+
+I used forge for testing the smart contracts, so if it was not installed with `npm install` execute the following command
+```shell
+npm add --save-dev "foundry-rs/forge-std#v1.11.0"
+```
 
 ## Usage
 
@@ -23,12 +34,19 @@ To run all the tests in the project, execute the following command:
 npx hardhat test
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+You can also selectively run the Solidity(Highly recommended to run this) or `node:test` tests:
 
 ```shell
 npx hardhat test solidity
 npx hardhat test nodejs
 ```
+
+If you want to test only one project, execute:
+```shell
+npx hardhat test solidity contracts/<Project folder>/<Test file>
+```
+
+## The following section is still incomplete so just ignore it for now
 
 ### Make a deployment to Sepolia
 
