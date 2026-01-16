@@ -36,9 +36,112 @@ contract SwapTest is Test {
             7
         );
         vm.stopPrank();
-        assertEq(firstNFT.balanceOf(address(swapNFT)), 1);
         assertEq(swapId_1, 0);
     }
 
+    function test_DepositOutOfTime() public {
+        uint256 tokenIdA = firstNFT.safeMint(partyA);
+        uint256 tokenIdB = secondNFT.safeMint(partyB);
 
+        vm.startPrank(partyA);
+        firstNFT.approve(address(swapNFT), tokenIdA);
+        uint256 swapId_1 = swapNFT.createSwap(
+            tokenIdA,
+            address(firstNFT),
+            tokenIdB,
+            address(secondNFT),
+            7
+        );
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 8 days);
+        
+        vm.startPrank(partyA);
+        vm.expectRevert();
+        swapNFT.depositNFT(swapId_1);
+        vm.stopPrank();
+    }
+
+    function test_DepositTokenA() public {
+        uint256 tokenIdA = firstNFT.safeMint(partyA);
+        uint256 tokenIdB = secondNFT.safeMint(partyB);
+
+        vm.startPrank(partyA);
+        firstNFT.approve(address(swapNFT), tokenIdA);
+        uint256 swapId_1 = swapNFT.createSwap(
+            tokenIdA,
+            address(firstNFT),
+            tokenIdB,
+            address(secondNFT),
+            7
+        );
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 6 days);
+
+        vm.startPrank(partyA);
+        swapNFT.depositNFT(swapId_1);
+        vm.stopPrank();
+
+        assertEq(address(swapNFT), firstNFT.ownerOf(tokenIdA));
+    }
+
+    function test_DepositTokenB() public {
+        uint256 tokenIdA = firstNFT.safeMint(partyA);
+        uint256 tokenIdB = secondNFT.safeMint(partyB);
+
+        vm.startPrank(partyA);
+        firstNFT.approve(address(swapNFT), tokenIdA);
+        uint256 swapId_1 = swapNFT.createSwap(
+            tokenIdA,
+            address(firstNFT),
+            tokenIdB,
+            address(secondNFT),
+            7
+        );
+        vm.stopPrank();
+
+        vm.startPrank(partyB);
+        secondNFT.approve(address(swapNFT), tokenIdB);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 6 days);
+
+        vm.startPrank(partyB);
+        swapNFT.depositNFT(swapId_1);
+        vm.stopPrank();
+
+        assertEq(address(swapNFT), secondNFT.ownerOf(tokenIdB));
+    }
+
+    function test_WithdrawTokenA() public {
+        uint256 tokenIdA = firstNFT.safeMint(partyA);
+        uint256 tokenIdB = secondNFT.safeMint(partyB);
+
+        vm.startPrank(partyA);
+        firstNFT.approve(address(swapNFT), tokenIdA);
+        uint256 swapId_1 = swapNFT.createSwap(
+            tokenIdA,
+            address(firstNFT),
+            tokenIdB,
+            address(secondNFT),
+            7
+        );
+        swapNFT.depositNFT(swapId_1);
+        vm.stopPrank();
+
+        vm.startPrank(partyB);
+        secondNFT.approve(address(swapNFT), tokenIdB);
+
+        vm.warp(block.timestamp + 6 days);
+
+        swapNFT.depositNFT(swapId_1);
+        vm.stopPrank();
+
+        vm.startPrank(partyA);
+        swapNFT.takeMyNFT(swapId_1);
+        vm.stopPrank();
+
+        assertEq(partyA, secondNFT.ownerOf(tokenIdB));
+    }
 }
