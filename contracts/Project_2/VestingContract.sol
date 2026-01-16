@@ -79,7 +79,7 @@ contract VestingContract {
         );
         if (!success) revert TransferFailed();
 
-        vestingId = _nextVestingId;
+        vestingId = _nextVestingId++;
         vestingSchedules[_nextVestingId] = VestingSchedule({
             payer: msg.sender,
             recipient: recipient,
