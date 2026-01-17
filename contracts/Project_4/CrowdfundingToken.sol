@@ -31,6 +31,7 @@ contract CrowdfundingToken {
     }
 
     struct Donation {
+        address tokenAddr;
         uint256 amount;
         bool withdrawn;
     }
@@ -55,6 +56,19 @@ contract CrowdfundingToken {
         address tokenAddr
     );
 
+    event FundsWithdrawn(
+        address indexed sender,
+        uint256 indexed fundaiserId,
+        uint256 totalFunds
+    );
+
+    event DonationWithdrawn(
+        address indexed sender,
+        uint256 indexed fundraiserId,
+        uint256 indexed donationId,
+        uint256 amount
+    );
+
     error InvalidToken();
     error InvalidGoal();
     error InvalidDeadline();
@@ -66,6 +80,9 @@ contract CrowdfundingToken {
     error NotTheCreator();
     error FundraiserOngoing();
     error FundraiserFinished();
+    error GoalNotReached();
+    error HasNotDonated();
+    error AlreadyWithdrawn();
 
     function createFundraiser(
         uint256 _goal,
@@ -103,7 +120,8 @@ contract CrowdfundingToken {
 
         if (fundraiser.tokenAddr != _tokenAddr) revert DifferentToken();
         if (block.timestamp > fundraiser.deadline) revert OutOfTheTime();
-        if (fundraiser.status == fundraiserStatus.Finished) revert FundraiserFinished();
+        if (fundraiser.status == fundraiserStatus.Finished)
+            revert FundraiserFinished();
 
         IERC20 token = IERC20(_tokenAddr);
         if (token.allowance(msg.sender, address(this)) < _amount)
@@ -113,6 +131,7 @@ contract CrowdfundingToken {
         if (!hasDonatedToFund[msg.sender][fundraiserId]) {
             uint256 donationId = _nextDonationId++;
             donations[donationId] = Donation({
+                tokenAddr: _tokenAddr,
                 amount: _amount,
                 withdrawn: false
             });
@@ -158,14 +177,43 @@ contract CrowdfundingToken {
         }
     }
 
-    function withdrawFunds(uint256 _fundaiserId) public {
-        Fundraiser storage fundraiser = fundraisers[_fundaiserId];
+    function withdrawFunds(uint256 _fundraiserId) public {
+        Fundraiser storage fundraiser = fundraisers[_fundraiserId];
 
         if (fundraiser.creator != msg.sender) revert NotTheCreator();
         if (block.timestamp <= fundraiser.deadline) revert FundraiserOngoing();
-        if (fundraiser.status == fundraiserStatus.Finished) revert FundraiserFinished();
+        if (fundraiser.status == fundraiserStatus.Finished)
+            revert FundraiserFinished();
+        if (fundraiser.currentFund < fundraiser.goal) revert GoalNotReached();
+
+        fundraiser.status = fundraiserStatus.Finished;
 
         IERC20 token = IERC20(fundraiser.tokenAddr);
-        // token.transfer(msg.sender, );
+        token.transfer(msg.sender, fundraiser.currentFund);
+
+        emit FundsWithdrawn(msg.sender, _fundraiserId, fundraiser.currentFund);
+    }
+
+    function withdrawDonation(uint256 _fundraiserId) public {
+        if (!hasDonatedToFund[msg.sender][_fundraiserId])
+            revert HasNotDonated();
+
+        // Fundraiser storage fundraiser = fundraisers[_fundraiserId];
+        uint256 donationId = donationsIdsFromFund[msg.sender][_fundraiserId];
+
+        Donation storage donation = donations[donationId];
+        if (donation.withdrawn) revert AlreadyWithdrawn();
+
+        donation.withdrawn = true;
+
+        IERC20 token = IERC20(donation.tokenAddr);
+        token.transfer(msg.sender, donation.amount);
+
+        emit DonationWithdrawn(
+            msg.sender,
+            _fundraiserId,
+            donationId,
+            donation.amount
+        );
     }
 }
