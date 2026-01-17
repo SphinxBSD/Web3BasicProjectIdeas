@@ -29,10 +29,11 @@ contract SwapTest is Test {
         vm.startPrank(partyA);
         firstNFT.approve(address(swapNFT), tokenIdA);
         uint256 swapId_1 = swapNFT.createSwap(
-            tokenIdA,
             address(firstNFT),
-            tokenIdB,
+            tokenIdA,
+            partyB,
             address(secondNFT),
+            tokenIdB,
             7
         );
         vm.stopPrank();
@@ -46,10 +47,11 @@ contract SwapTest is Test {
         vm.startPrank(partyA);
         firstNFT.approve(address(swapNFT), tokenIdA);
         uint256 swapId_1 = swapNFT.createSwap(
-            tokenIdA,
             address(firstNFT),
-            tokenIdB,
+            tokenIdA,
+            partyB,
             address(secondNFT),
+            tokenIdB,
             7
         );
         vm.stopPrank();
@@ -69,10 +71,11 @@ contract SwapTest is Test {
         vm.startPrank(partyA);
         firstNFT.approve(address(swapNFT), tokenIdA);
         uint256 swapId_1 = swapNFT.createSwap(
-            tokenIdA,
             address(firstNFT),
-            tokenIdB,
+            tokenIdA,
+            partyB,
             address(secondNFT),
+            tokenIdB,
             7
         );
         vm.stopPrank();
@@ -93,10 +96,11 @@ contract SwapTest is Test {
         vm.startPrank(partyA);
         firstNFT.approve(address(swapNFT), tokenIdA);
         uint256 swapId_1 = swapNFT.createSwap(
-            tokenIdA,
             address(firstNFT),
-            tokenIdB,
+            tokenIdA,
+            partyB,
             address(secondNFT),
+            tokenIdB,
             7
         );
         vm.stopPrank();
@@ -121,10 +125,11 @@ contract SwapTest is Test {
         vm.startPrank(partyA);
         firstNFT.approve(address(swapNFT), tokenIdA);
         uint256 swapId_1 = swapNFT.createSwap(
-            tokenIdA,
             address(firstNFT),
-            tokenIdB,
+            tokenIdA,
+            partyB,
             address(secondNFT),
+            tokenIdB,
             7
         );
         swapNFT.depositNFT(swapId_1);
@@ -139,7 +144,7 @@ contract SwapTest is Test {
         vm.stopPrank();
 
         vm.startPrank(partyA);
-        swapNFT.takeMyNFT(swapId_1);
+        swapNFT.executeSwap(swapId_1);
         vm.stopPrank();
 
         assertEq(partyA, secondNFT.ownerOf(tokenIdB));

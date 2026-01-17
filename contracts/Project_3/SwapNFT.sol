@@ -5,164 +5,335 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract SwapNFT is IERC721Receiver {
-    uint256 internal _nextSwapId;
+    uint256 private _nextSwapId;
+
+    enum SwapStatus {
+        Active,
+        Completed,
+        Cancelled
+    }
+
     struct Swap {
-        uint256 tokenIdA;
-        uint256 tokenIdB;
         address nftContractA;
+        uint256 tokenIdA;
+        address partyA;
         address nftContractB;
-        address ownerNftA;
-        address ownerNftB;
+        uint256 tokenIdB;
+        address partyB;
         bool depositedA;
         bool depositedB;
-        uint256 limitTimeOnDays;
+        uint256 expirationTime;
+        SwapStatus status;
     }
 
     mapping(uint256 => Swap) public swaps;
-    mapping(address => uint256[]) public swapsFromUser;
 
     event SwapCreated(
-        uint256 swapId,
-        address sender,
-        uint256 tokendId,
-        address partyB,
-        uint256 limitTimeOnDays
+        uint256 indexed swapId,
+        address indexed partyA,
+        address nftContractA,
+        uint256 tokenIdA,
+        address indexed partyB,
+        address nftContractB,
+        uint256 tokenIdB,
+        uint256 expirationTime
     );
 
     event TokenDeposited(
-        address indexed depositer,
-        uint256 swapId,
+        uint256 indexed swapId,
+        address indexed depositor,
+        address nftContract,
         uint256 tokenId
     );
 
-    error NotTheOwner();
-    error NotValidLimitTime();
-    error NotValidToken();
+    event SwapCompleted(uint256 indexed swapId);
+    
+    event SwapCancelled(uint256 indexed swapId);
+
+    event TokenWithdrawn(
+        uint256 indexed swapId,
+        address indexed withdrawer,
+        address nftContract,
+        uint256 tokenId
+    );
+
+    error InvalidAddress();
+    error NotTokenOwner();
+    error InvalidDuration();
+    error SwapNotActive();
+    error NotPartyToSwap();
     error AlreadyDeposited();
-    error InvalidDepositer();
-    error OutOfTheTime();
-    error NotPossibleToTake();
-    error AlreadyWithdrawn();
-    error TransactionFailed();
-    error InvalidWithdrawer();
+    error SwapNotExpired();
+    error BothPartiesNotDeposited();
+    error SwapExpired();
+    error NothingToWithdraw();
 
     function onERC721Received(
-        address operator,
-        address from,
-        uint256 tokenId,
-        bytes calldata data
+        address,
+        address,
+        uint256,
+        bytes calldata
     ) external pure override returns (bytes4) {
-        return this.onERC721Received.selector;
+        return IERC721Receiver.onERC721Received.selector;
     }
 
+    /**
+     * @notice Create a new NFT swap
+     * @param _nftContractA Address of the first NFT contract
+     * @param _tokenIdA Token ID of the first NFT
+     * @param _partyB Address of the counterparty
+     * @param _nftContractB Address of the second NFT contract
+     * @param _tokenIdB Token ID of the second NFT
+     * @param _durationInDays How many days the swap remains valid
+     */
     function createSwap(
+        address _nftContractA,
         uint256 _tokenIdA,
-        address _tokenContractA,
+        address _partyB,
+        address _nftContractB,
         uint256 _tokenIdB,
-        address _tokenContractB,
-        uint256 limitTime
-    ) public returns (uint256 swapId) {
-        if (_tokenContractA == address(0)) revert NotValidToken();
-        if (_tokenContractB == address(0)) revert NotValidToken();
-        IERC721 tokenA = IERC721(_tokenContractA);
-        IERC721 tokenB = IERC721(_tokenContractB);
+        uint256 _durationInDays
+    ) external returns (uint256 swapId) {
+        if (_nftContractA == address(0) || _nftContractB == address(0)) {
+            revert InvalidAddress();
+        }
+        if (_partyB == address(0) || _partyB == msg.sender) {
+            revert InvalidAddress();
+        }
+        if (_durationInDays == 0) {
+            revert InvalidDuration();
+        }
 
-        if (tokenA.ownerOf(_tokenIdA) != msg.sender) revert NotTheOwner();
+        // Verify msg.sender owns the NFT
+        if (IERC721(_nftContractA).ownerOf(_tokenIdA) != msg.sender) {
+            revert NotTokenOwner();
+        }
 
-        if (limitTime == 0) revert NotValidLimitTime();
+        // Verify partyB owns their NFT
+        if (IERC721(_nftContractB).ownerOf(_tokenIdB) != _partyB) {
+            revert NotTokenOwner();
+        }
 
         swapId = _nextSwapId++;
+        uint256 expirationTime = block.timestamp + (_durationInDays * 1 days);
 
         swaps[swapId] = Swap({
+            nftContractA: _nftContractA,
             tokenIdA: _tokenIdA,
+            partyA: msg.sender,
+            nftContractB: _nftContractB,
             tokenIdB: _tokenIdB,
-            nftContractA: _tokenContractA,
-            nftContractB: _tokenContractB,
-            ownerNftA: tokenA.ownerOf(_tokenIdA),
-            ownerNftB: tokenB.ownerOf(_tokenIdB),
+            partyB: _partyB,
             depositedA: false,
             depositedB: false,
-            limitTimeOnDays: limitTime
+            expirationTime: expirationTime,
+            status: SwapStatus.Active
         });
-
-        swapsFromUser[msg.sender].push(swapId);
 
         emit SwapCreated(
             swapId,
             msg.sender,
+            _nftContractA,
             _tokenIdA,
-            tokenB.ownerOf(_tokenIdB),
-            limitTime
+            _partyB,
+            _nftContractB,
+            _tokenIdB,
+            expirationTime
         );
     }
 
-    function _transferNFT(
-        address depositer,
-        uint256 tokenId,
-        address tokenContract
-    ) internal returns (bool) {
-        IERC721 token = IERC721(tokenContract);
-
-        if (depositer != token.ownerOf(tokenId)) revert NotTheOwner();
-
-        token.safeTransferFrom(depositer, address(this), tokenId);
-
-        return true;
-    }
-
-    function depositNFT(uint256 swapId) public {
+    /**
+     * @notice Deposit your NFT into the swap
+     * @param swapId The ID of the swap
+     */
+    function depositNFT(uint256 swapId) external {
         Swap storage swap = swaps[swapId];
 
-        if (block.timestamp > swap.limitTimeOnDays * 1 days)
-            revert OutOfTheTime();
+        if (swap.status != SwapStatus.Active) {
+            revert SwapNotActive();
+        }
+        if (block.timestamp >= swap.expirationTime) {
+            revert SwapExpired();
+        }
 
-        if (swap.ownerNftA == msg.sender) {
-            if (swap.depositedA) revert AlreadyDeposited();
+        if (msg.sender == swap.partyA) {
+            if (swap.depositedA) {
+                revert AlreadyDeposited();
+            }
 
-            swap.depositedA = _transferNFT(
+            IERC721(swap.nftContractA).safeTransferFrom(
                 msg.sender,
-                swap.tokenIdA,
-                swap.nftContractA
+                address(this),
+                swap.tokenIdA
             );
 
-            emit TokenDeposited(msg.sender, swapId, swap.tokenIdA);
-        } else if (swap.ownerNftB == msg.sender) {
-            if (swap.depositedB) revert AlreadyDeposited();
+            swap.depositedA = true;
 
-            swap.depositedB = _transferNFT(
+            emit TokenDeposited(
+                swapId,
                 msg.sender,
-                swap.tokenIdB,
-                swap.nftContractB
+                swap.nftContractA,
+                swap.tokenIdA
             );
-            emit TokenDeposited(msg.sender, swapId, swap.tokenIdA);
+        } else if (msg.sender == swap.partyB) {
+            if (swap.depositedB) {
+                revert AlreadyDeposited();
+            }
+
+            IERC721(swap.nftContractB).safeTransferFrom(
+                msg.sender,
+                address(this),
+                swap.tokenIdB
+            );
+
+            swap.depositedB = true;
+
+            emit TokenDeposited(
+                swapId,
+                msg.sender,
+                swap.nftContractB,
+                swap.tokenIdB
+            );
         } else {
-            revert InvalidDepositer();
+            revert NotPartyToSwap();
         }
     }
 
-    function withdrawNFT(address recipient, uint256 tokenId, address tokenContract) public returns(bool) {
-        IERC721 token = IERC721(tokenContract);
-
-        if (recipient == token.ownerOf(tokenId)) revert AlreadyWithdrawn();
-
-        token.safeTransferFrom(address(this), recipient, tokenId);
-
-        return true;
-    }
-
-    function takeMyNFT(uint256 swapId) public {
+    /**
+     * @notice Execute the swap - transfers NFTs to their new owners
+     * @param swapId The ID of the swap
+     */
+    function executeSwap(uint256 swapId) external {
         Swap storage swap = swaps[swapId];
 
-        if (!(swap.depositedA && swap.depositedB)) revert NotPossibleToTake();
-
-        if (swap.ownerNftA == msg.sender) {
-            bool success = withdrawNFT(msg.sender, swap.tokenIdB, swap.nftContractB);
-            if (!success) revert TransactionFailed();
-        } else if (swap.ownerNftB == msg.sender) {
-            bool success = withdrawNFT(msg.sender, swap.tokenIdA, swap.nftContractA);
-            if (!success) revert TransactionFailed();
-        } else {
-            revert InvalidWithdrawer();
+        if (swap.status != SwapStatus.Active) {
+            revert SwapNotActive();
         }
+        if (!swap.depositedA || !swap.depositedB) {
+            revert BothPartiesNotDeposited();
+        }
+        if (block.timestamp >= swap.expirationTime) {
+            revert SwapExpired();
+        }
+        if (msg.sender != swap.partyA && msg.sender != swap.partyB) {
+            revert NotPartyToSwap();
+        }
+
+        // Mark as completed first to prevent reentrancy
+        swap.status = SwapStatus.Completed;
+
+        // Transfer NFTs to new owners
+        IERC721(swap.nftContractA).safeTransferFrom(
+            address(this),
+            swap.partyB,
+            swap.tokenIdA
+        );
+
+        IERC721(swap.nftContractB).safeTransferFrom(
+            address(this),
+            swap.partyA,
+            swap.tokenIdB
+        );
+
+        emit SwapCompleted(swapId);
+    }
+
+    /**
+     * @notice Cancel the swap before both parties deposit
+     * @param swapId The ID of the swap
+     */
+    function cancelSwap(uint256 swapId) external {
+        Swap storage swap = swaps[swapId];
+
+        if (swap.status != SwapStatus.Active) {
+            revert SwapNotActive();
+        }
+        if (msg.sender != swap.partyA && msg.sender != swap.partyB) {
+            revert NotPartyToSwap();
+        }
+
+        // Can only cancel if both haven't deposited yet
+        if (swap.depositedA && swap.depositedB) {
+            revert BothPartiesNotDeposited();
+        }
+
+        swap.status = SwapStatus.Cancelled;
+
+        // Return any deposited NFTs
+        if (swap.depositedA) {
+            IERC721(swap.nftContractA).safeTransferFrom(
+                address(this),
+                swap.partyA,
+                swap.tokenIdA
+            );
+        }
+        if (swap.depositedB) {
+            IERC721(swap.nftContractB).safeTransferFrom(
+                address(this),
+                swap.partyB,
+                swap.tokenIdB
+            );
+        }
+
+        emit SwapCancelled(swapId);
+    }
+
+    /**
+     * @notice Withdraw your NFT after expiration if swap didn't complete
+     * @param swapId The ID of the swap
+     */
+    function withdrawAfterExpiration(uint256 swapId) external {
+        Swap storage swap = swaps[swapId];
+
+        if (swap.status != SwapStatus.Active) {
+            revert SwapNotActive();
+        }
+        if (block.timestamp < swap.expirationTime) {
+            revert SwapNotExpired();
+        }
+
+        swap.status = SwapStatus.Cancelled;
+
+        // Return deposited NFTs to original owners
+        if (swap.depositedA) {
+            IERC721(swap.nftContractA).safeTransferFrom(
+                address(this),
+                swap.partyA,
+                swap.tokenIdA
+            );
+            emit TokenWithdrawn(
+                swapId,
+                swap.partyA,
+                swap.nftContractA,
+                swap.tokenIdA
+            );
+        }
+        if (swap.depositedB) {
+            IERC721(swap.nftContractB).safeTransferFrom(
+                address(this),
+                swap.partyB,
+                swap.tokenIdB
+            );
+            emit TokenWithdrawn(
+                swapId,
+                swap.partyB,
+                swap.nftContractB,
+                swap.tokenIdB
+            );
+        }
+
+        if (!swap.depositedA && !swap.depositedB) {
+            revert NothingToWithdraw();
+        }
+
+        emit SwapCancelled(swapId);
+    }
+
+    /**
+     * @notice Get swap details
+     * @param swapId The ID of the swap
+     */
+    function getSwap(uint256 swapId) external view returns (Swap memory) {
+        return swaps[swapId];
     }
 }
