@@ -69,6 +69,11 @@ contract CrowdfundingToken {
         uint256 amount
     );
 
+    event FundraiserCancelled(
+        uint256 indexed fundraiserId,
+        address indexed creator
+    );
+
     error InvalidToken();
     error InvalidGoal();
     error InvalidDeadline();
@@ -83,6 +88,8 @@ contract CrowdfundingToken {
     error GoalNotReached();
     error HasNotDonated();
     error AlreadyWithdrawn();
+    error FundraiserLocked();
+    error GoalReached();
 
     function createFundraiser(
         uint256 _goal,
@@ -93,7 +100,7 @@ contract CrowdfundingToken {
         if (_goal == 0) revert InvalidGoal();
         if (_deadline == 0) revert InvalidDeadline();
 
-        fundraiserId = _nextFundaraiserId;
+        fundraiserId = _nextFundaraiserId++;
         fundraisers[fundraiserId] = Fundraiser({
             creator: msg.sender,
             goal: _goal,
@@ -137,7 +144,8 @@ contract CrowdfundingToken {
             });
 
             donationsIdsFromFund[msg.sender][fundraiserId] = donationId;
-            fundraiser.currentFund = _amount;
+            fundraiser.currentFund += _amount;
+            hasDonatedToFund[msg.sender][fundraiserId] = true;
 
             bool success = token.transferFrom(
                 msg.sender,
@@ -157,6 +165,7 @@ contract CrowdfundingToken {
             uint256 donationId = donationsIdsFromFund[msg.sender][fundraiserId];
             Donation storage donation = donations[donationId];
             donation.amount += _amount;
+            donation.withdrawn = false;
 
             fundraiser.currentFund += _amount;
 
@@ -181,39 +190,64 @@ contract CrowdfundingToken {
         Fundraiser storage fundraiser = fundraisers[_fundraiserId];
 
         if (fundraiser.creator != msg.sender) revert NotTheCreator();
-        if (block.timestamp <= fundraiser.deadline) revert FundraiserOngoing();
-        if (fundraiser.status == fundraiserStatus.Finished)
+
+        if (fundraiser.status != fundraiserStatus.Ongoing)
             revert FundraiserFinished();
         if (fundraiser.currentFund < fundraiser.goal) revert GoalNotReached();
 
+        uint256 amountToSend = fundraiser.currentFund;
         fundraiser.status = fundraiserStatus.Finished;
+        fundraiser.currentFund = 0;
 
         IERC20 token = IERC20(fundraiser.tokenAddr);
-        token.transfer(msg.sender, fundraiser.currentFund);
+        bool success = token.transfer(msg.sender, amountToSend);
+        if (!success) revert TransactionFailed();
 
-        emit FundsWithdrawn(msg.sender, _fundraiserId, fundraiser.currentFund);
+        emit FundsWithdrawn(msg.sender, _fundraiserId, amountToSend);
     }
 
     function withdrawDonation(uint256 _fundraiserId) public {
         if (!hasDonatedToFund[msg.sender][_fundraiserId])
             revert HasNotDonated();
 
-        // Fundraiser storage fundraiser = fundraisers[_fundraiserId];
+        Fundraiser storage fundraiser = fundraisers[_fundraiserId];
         uint256 donationId = donationsIdsFromFund[msg.sender][_fundraiserId];
 
         Donation storage donation = donations[donationId];
         if (donation.withdrawn) revert AlreadyWithdrawn();
+        if (block.timestamp <= fundraiser.deadline) revert FundraiserOngoing();
+        if (fundraiser.currentFund >= fundraiser.goal) revert GoalReached();
+        if (fundraiser.status == fundraiserStatus.Finished)
+            revert FundraiserFinished();
 
+        uint256 amountDonated = donation.amount;
         donation.withdrawn = true;
+        donation.amount = 0;
+
+        fundraiser.currentFund -= amountDonated;
 
         IERC20 token = IERC20(donation.tokenAddr);
-        token.transfer(msg.sender, donation.amount);
+        bool success = token.transfer(msg.sender, amountDonated);
+        if (!success) revert TransactionFailed();
 
         emit DonationWithdrawn(
             msg.sender,
             _fundraiserId,
             donationId,
-            donation.amount
+            amountDonated
         );
+    }
+
+    function cancelCrowdfunding(uint256 _fundraiserId) public {
+        Fundraiser storage fundraiser = fundraisers[_fundraiserId];
+
+        if (msg.sender != fundraiser.creator) revert NotTheCreator();
+        if (fundraiser.status != fundraiserStatus.Ongoing)
+            revert FundraiserFinished();
+        if (fundraiser.currentFund >= fundraiser.goal) revert GoalReached();
+
+        fundraiser.status = fundraiserStatus.Cancelled;
+
+        emit FundraiserCancelled(_fundraiserId, msg.sender);
     }
 }
