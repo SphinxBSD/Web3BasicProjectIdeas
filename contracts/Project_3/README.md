@@ -1,184 +1,101 @@
-# 3. NFT Swap Contract
+# NFT Swap Contract
 
-Two people want to trade their NFTs in a trustless way. A user creates a swap on the contract, which is a pair of address, ids where the address is the smart contract address of the NFT and the id is the tokenId of the NFT. One person can deposit an NFT only if the id matches the address and id. The counterparty can deposit only if their NFT matches the address and id of the swap.
+> Disclaimer: I used AI in order to generate this README explanation. However I checked everything is correct.
 
-Once both are deposited, either party can call swap.
+## Overview
 
-Some corner cases to think about:
+A trustless escrow system for peer-to-peer NFT trading. This smart contract enables secure, atomic swaps of NFTs between two parties without requiring intermediaries. Users can create swap agreements where both parties must deposit their NFTs before execution, ensuring a fair exchange.
 
-    how long, if at all, should the traders be forced to keep their NFT in the contract?
+## Features
 
----
+- **Trustless Trading**: Eliminates counterparty risk through atomic swaps
+- **Time-Limited Agreements**: Configurable swap expiration periods
+- **Flexible NFT Support**: Works with any ERC721 compliant NFT
+- **Secure Escrow**: NFTs are held securely until swap conditions are met
+- **Multiple Recovery Options**: Safe withdrawal mechanisms for expired or cancelled swaps
+- **Transparent Tracking**: Comprehensive event logging and view functions
 
-## Draft of the first final solution
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+## Contract Structure
 
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+### SwapNFT
+The main contract that manages all NFT swap agreements with the following key functions:
 
-contract SwapNFT is IERC721Receiver {
-    uint256 internal _nextSwapId;
-    struct Swap {
-        uint256 tokenIdA;
-        uint256 tokenIdB;
-        address nftContractA;
-        address nftContractB;
-        address ownerNftA;
-        address ownerNftB;
-        bool depositedA;
-        bool depositedB;
-        uint256 limitTimeOnDays;
-    }
+- `createSwap()`: Establish a new NFT swap agreement between two parties
+- `depositNFT()`: Deposit your NFT into the swap escrow
+- `executeSwap()`: Complete the swap when both NFTs are deposited
+- `cancelSwap()`: Cancel the swap before both parties deposit
+- `withdrawAfterExpiration()`: Reclaim NFTs after swap expiration
+- `getSwap()`: View detailed swap information
 
-    mapping(uint256 => Swap) public swaps;
-    mapping(address => uint256[]) public swapsFromUser;
+### Example NFT Contracts
+Two sample ERC721 contracts for testing purposes:
+- **FirstNFT**: "FirstNFT" (FST) token
+- **SecondNFT**: "SecondNFT" (SND) token
+- Both feature minting functionality with Ownable access control
 
-    event SwapCreated(
-        uint256 swapId,
-        address sender,
-        uint256 tokendId,
-        address partyB,
-        uint256 limitTimeOnDays
-    );
+## How It Works
 
-    event TokenDeposited(
-        address indexed depositer,
-        uint256 swapId,
-        uint256 tokenId
-    );
+1. **Swap Creation**: Party A creates a swap specifying:
+   - Their NFT contract and token ID
+   - Counterparty's address (Party B)
+   - Party B's NFT contract and token ID
+   - Swap duration in days
 
-    error NotTheOwner();
-    error NotValidLimitTime();
-    error NotValidToken();
-    error AlreadyDeposited();
-    error InvalidDepositer();
-    error OutOfTheTime();
-    error NotPossibleToTake();
-    error AlreadyWithdrawn();
-    error TransactionFailed();
-    error InvalidWithdrawer();
+2. **Verification**: The contract verifies both parties own their respective NFTs
 
-    function onERC721Received(
-        address operator,
-        address from,
-        uint256 tokenId,
-        bytes calldata data
-    ) external pure override returns (bytes4) {
-        return this.onERC721Received.selector;
-    }
+3. **NFT Deposit**: Each party deposits their NFT into the contract escrow
 
-    function createSwap(
-        uint256 _tokenIdA,
-        address _tokenContractA,
-        uint256 _tokenIdB,
-        address _tokenContractB,
-        uint256 limitTime
-    ) public returns (uint256 swapId) {
-        if (_tokenContractA == address(0)) revert NotValidToken();
-        if (_tokenContractB == address(0)) revert NotValidToken();
-        IERC721 tokenA = IERC721(_tokenContractA);
-        IERC721 tokenB = IERC721(_tokenContractB);
+4. **Swap Execution**: Once both NFTs are deposited, either party can execute the swap to transfer NFTs to their new owners
 
-        if (tokenA.ownerOf(_tokenIdA) != msg.sender) revert NotTheOwner();
+5. **Completion**: The swap is marked as completed, and NFTs are transferred atomically
 
-        if (limitTime == 0) revert NotValidLimitTime();
+## Key Parameters
 
-        swapId = _nextSwapId++;
+- **Swap Duration**: Configurable validity period (1+ days)
+- **Expiration Handling**: Swaps automatically expire after the set duration
+- **Atomic Execution**: Both NFTs transfer simultaneously or not at all
+- **Owner Verification**: Only verified NFT owners can create or participate in swaps
 
-        swaps[swapId] = Swap({
-            tokenIdA: _tokenIdA,
-            tokenIdB: _tokenIdB,
-            nftContractA: _tokenContractA,
-            nftContractB: _tokenContractB,
-            ownerNftA: tokenA.ownerOf(_tokenIdA),
-            ownerNftB: tokenB.ownerOf(_tokenIdB),
-            depositedA: false,
-            depositedB: false,
-            limitTimeOnDays: limitTime
-        });
+## Events
 
-        swapsFromUser[msg.sender].push(swapId);
+- `SwapCreated`: Emitted when a new swap agreement is established
+- `TokenDeposited`: Emitted when a party deposits their NFT
+- `SwapCompleted`: Emitted when the swap successfully executes
+- `SwapCancelled`: Emitted when a swap is cancelled
+- `TokenWithdrawn`: Emitted when NFTs are returned after expiration
 
-        emit SwapCreated(
-            swapId,
-            msg.sender,
-            _tokenIdA,
-            tokenB.ownerOf(_tokenIdB),
-            limitTime
-        );
-    }
+## Error Handling
 
-    function _transferNFT(
-        address depositer,
-        uint256 tokenId,
-        address tokenContract
-    ) internal returns (bool) {
-        IERC721 token = IERC721(tokenContract);
+Comprehensive error messages for:
+- Invalid addresses or swap durations
+- Unauthorized access attempts
+- Attempts to deposit NFTs more than once
+- Expired or inactive swaps
+- Missing NFT ownership verification
+- Attempts to execute before both parties deposit
 
-        if (depositer != token.ownerOf(tokenId)) revert NotTheOwner();
+## Safety Mechanisms
 
-        token.safeTransferFrom(depositer, address(this), tokenId);
+- **Expiration Protection**: NFTs cannot be trapped indefinitely
+- **Owner Verification**: Prevents fraudulent swap creation
+- **Reentrancy Guards**: Status updates before transfers prevent reentrancy attacks
+- **Selective Withdrawal**: Only deposited NFTs can be withdrawn
+- **Cancellation Rights**: Swaps can be cancelled before both parties deposit
 
-        return true;
-    }
+## Use Cases
 
-    function depositNFT(uint256 swapId) public {
-        Swap storage swap = swaps[swapId];
+- Direct NFT trading without intermediaries
+- Cross-collection NFT exchanges
+- Trustless marketplace transactions
+- Gaming asset trading
+- Digital collectible exchanges
+- Any scenario requiring secure NFT-for-NFT trades
 
-        if (block.timestamp > swap.limitTimeOnDays * 1 days)
-            revert OutOfTheTime();
+## Technical Details
 
-        if (swap.ownerNftA == msg.sender) {
-            if (swap.depositedA) revert AlreadyDeposited();
+- **Solidity Version**: ^0.8.28
+- **Dependencies**: OpenZeppelin contracts for ERC721 and IERC721Receiver functionality
+- **ERC721Receiver**: Implements safe transfer support
+- **License**: MIT
 
-            swap.depositedA = _transferNFT(
-                msg.sender,
-                swap.tokenIdA,
-                swap.nftContractA
-            );
-
-            emit TokenDeposited(msg.sender, swapId, swap.tokenIdA);
-        } else if (swap.ownerNftB == msg.sender) {
-            if (swap.depositedB) revert AlreadyDeposited();
-
-            swap.depositedB = _transferNFT(
-                msg.sender,
-                swap.tokenIdB,
-                swap.nftContractB
-            );
-            emit TokenDeposited(msg.sender, swapId, swap.tokenIdA);
-        } else {
-            revert InvalidDepositer();
-        }
-    }
-
-    function withdrawNFT(address recipient, uint256 tokenId, address tokenContract) public returns(bool) {
-        IERC721 token = IERC721(tokenContract);
-
-        if (recipient == token.ownerOf(tokenId)) revert AlreadyWithdrawn();
-
-        token.safeTransferFrom(address(this), recipient, tokenId);
-
-        return true;
-    }
-
-    function takeMyNFT(uint256 swapId) public {
-        Swap storage swap = swaps[swapId];
-
-        if (!(swap.depositedA && swap.depositedB)) revert NotPossibleToTake();
-
-        if (swap.ownerNftA == msg.sender) {
-            bool success = withdrawNFT(msg.sender, swap.tokenIdB, swap.nftContractB);
-            if (!success) revert TransactionFailed();
-        } else if (swap.ownerNftB == msg.sender) {
-            bool success = withdrawNFT(msg.sender, swap.tokenIdA, swap.nftContractA);
-            if (!success) revert TransactionFailed();
-        } else {
-            revert InvalidWithdrawer();
-        }
-    }
-}
-
-```
+The contract implements a robust, secure system for peer-to-peer NFT trading with multiple safeguards against common pitfalls in trustless exchanges.
