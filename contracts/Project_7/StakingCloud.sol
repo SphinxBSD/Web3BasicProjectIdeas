@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title StakingCloudCorrected
+ * @title StakingCloud
  * @notice Corrected version fixing critical bugs in the original implementation
  *
  * FIXES APPLIED:
@@ -16,7 +16,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * 5. Fixed division by zero in reward calculation
  * 6. Users can now retrieve both rewards AND principal
  */
-contract StakingCloudCorrected is Ownable {
+contract StakingCloud is Ownable {
     uint256 public constant MIN_STAKE_PERIOD = 7 days;
 
     struct StakeInfo {
